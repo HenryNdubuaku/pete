@@ -103,17 +103,20 @@ The training script automatically runs evaluations on validation sets (like STS-
 
 ### Reproducing key ablation
 ```bash
-python main.py --batch-size 512 --num-epochs 10 --d-model 256 && \
+# Transformer baselines
+python main.py --batch-size 512 --num-epochs 10 --d-model 256 --include-baseline && \
+python main.py --batch-size 512 --num-epochs 10 --d-model 512 --include-baseline && \
+python main.py --batch-size 512 --num-epochs 10 --num-hidden-layers 2 --d-model 256 --include-baseline && \
+
+# 1_256 ablations
 python main.py --batch-size 512 --num-epochs 10 --d-model 256 --permute-tokens && \
 python main.py --batch-size 512 --num-epochs 10 --d-model 256 --random-embeddings && \
 
-# 1_512
-python main.py --batch-size 512 --num-epochs 10 --d-model 512 && \
+# 1_512 ablations
 python main.py --batch-size 512 --num-epochs 10 --d-model 512 --permute-tokens && \
 python main.py --batch-size 512 --num-epochs 10 --d-model 512 --random-embeddings && \
 
-# 2_256
-python main.py --batch-size 512 --num-epochs 10 --num-hidden-layers 2 --d-model 256 && \
+# 2_256 ablations
 python main.py --batch-size 512 --num-epochs 10 --num-hidden-layers 2 --d-model 256 --permute-tokens && \
 python main.py --batch-size 512 --num-epochs 10 --num-hidden-layers 2 --d-model 256 --random-embeddings
 ```
