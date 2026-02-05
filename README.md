@@ -79,21 +79,12 @@ python main.py --batch-size 512 --num-epochs 10 --d-model 256 --include-baseline
 python main.py --batch-size 512 --num-epochs 10 --d-model 512 --include-baseline && \
 python main.py --batch-size 512 --num-epochs 10 --num-hidden-layers 2 --d-model 256 --include-baseline
 
-# 1_256 ablations
-python main.py --batch-size 512 --num-epochs 10 --d-model 256 --permute-tokens && \
-python main.py --batch-size 512 --num-epochs 10 --d-model 256 --random-embeddings && \
-python main.py --batch-size 512 --num-epochs 10 --d-model 256 --index-mode normalized && \
-python main.py --batch-size 512 --num-epochs 10 --d-model 256 --index-mode scaled --index-scale 0.001
-
-# 1_512 ablations
-python main.py --batch-size 512 --num-epochs 10 --d-model 512 --permute-tokens && \
-python main.py --batch-size 512 --num-epochs 10 --d-model 512 --random-embeddings && \
-python main.py --batch-size 512 --num-epochs 10 --d-model 512 --index-mode normalized
-
 # 2_256 ablations
+python main.py --batch-size 512 --num-epochs 10 --num-hidden-layers 2 --d-model 256 --include-baseline
 python main.py --batch-size 512 --num-epochs 10 --num-hidden-layers 2 --d-model 256 --permute-tokens && \
 python main.py --batch-size 512 --num-epochs 10 --num-hidden-layers 2 --d-model 256 --random-embeddings && \
-python main.py --batch-size 512 --num-epochs 10 --num-hidden-layers 2 --d-model 256 --index-mode normalized
+python main.py --batch-size 512 --num-epochs 10 --num-hidden-layers 2 --d-model 256 --index-mode normalized && \
+python main.py --batch-size 512 --num-epochs 10 --num-hidden-layers 2 --d-model 256 --index-mode scaled --index-scale 0.001
 ```
 
 ### Exploring embedding similarity
