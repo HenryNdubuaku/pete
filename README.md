@@ -89,6 +89,19 @@ python main.py --batch-size 512 --num-epochs 10 --num-hidden-layers 2 --d-model 
 python main.py --batch-size 512 --num-epochs 10 --num-hidden-layers 2 --d-model 256 --random-embeddings
 ```
 
+### Exploring embedding similarity
+
+After training, compare PETE's learned Fourier+MLP embeddings with traditional transformer embeddings:
+
+```bash
+# Compare embeddings for all configs
+python explore_similarity.py --config 1_256 && \
+python explore_similarity.py --config 1_512 && \
+python explore_similarity.py --config 2_256
+```
+
+This computes cosine similarity, angular distance, and MSE between PETE and transformer embedding layers to analyze whether PETE learns to approximate traditional embeddings.
+
 ## Citation
 
 If you find this work useful in your research, please cite our paper:

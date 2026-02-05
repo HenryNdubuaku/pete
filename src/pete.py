@@ -13,21 +13,19 @@ class PolynomialBlock(nn.Module):
     """
     Pure PyTorch implementation of Fourier embeddings.
 
-    Transforms token IDs into dense embeddings using sinusoidal functions
-    at different frequencies, similar to positional encodings but applied
-    to token values.
+    Normalizes token IDs to [-1, 1] range: x = 2 * p / (V - 1) - 1
+    Then applies Fourier features: [sin(πx), cos(πx), sin(2πx), cos(2πx), ...]
 
     Supports ablations:
     - permute_tokens: Randomly permute token IDs before embedding
-    - random_embeddings: Use fixed Gaussian random projection instead of Fourier
+    - random_embeddings: Use Random Fourier Features (random frequencies + phases)
     """
 
     def __init__(
         self,
         max_seq_len: int,
         d_model: int,
-        base: float = 10000.0,
-        vocab_size: int = None,
+        vocab_size: int,
         permute_tokens: bool = False,
         random_embeddings: bool = False,
         seed: int = 42,
@@ -35,22 +33,28 @@ class PolynomialBlock(nn.Module):
         super(PolynomialBlock, self).__init__()
         self.max_seq_len = max_seq_len
         self.d_model = d_model
-        self.base = base
+        self.vocab_size = vocab_size
         self.permute_tokens = permute_tokens
         self.random_embeddings = random_embeddings
 
         if random_embeddings:
-            # Fixed Gaussian random projection: x -> x * W
+            # Random Fourier Features: random frequencies and phases
+            # ω_k ~ N(0, σ²), b_k ~ U(0, 2π)
+            # φ(x) = sin(ω_k * x + b_k), cos(ω_k * x + b_k)
             generator = torch.Generator().manual_seed(seed)
-            random_proj = torch.randn(1, d_model, generator=generator)
-            self.register_buffer("random_proj", random_proj)
+            # Random frequencies (scale σ chosen to give similar range to integer harmonics)
+            sigma = d_model // 4  # frequency scale
+            random_freqs = torch.randn(d_model // 2, generator=generator) * sigma
+            # Random phases in [0, 2π]
+            random_phases = torch.rand(d_model // 2, generator=generator) * 2 * math.pi
+            self.register_buffer("random_freqs", random_freqs)
+            self.register_buffer("random_phases", random_phases)
         else:
-            # Fourier frequencies
-            inv_freq = 1.0 / (base ** (torch.arange(0, d_model, 2).float() / d_model))
-            self.register_buffer("inv_freq", inv_freq)
+            # Integer harmonics: k = 1, 2, 3, ..., d_model // 2
+            harmonics = torch.arange(1, d_model // 2 + 1).float()
+            self.register_buffer("harmonics", harmonics)
 
         if permute_tokens:
-            assert vocab_size is not None, "vocab_size required when permute_tokens=True"
             generator = torch.Generator().manual_seed(seed)
             permutation = torch.randperm(vocab_size, generator=generator)
             self.register_buffer("permutation", permutation)
@@ -66,15 +70,21 @@ class PolynomialBlock(nn.Module):
         if self.permute_tokens:
             input_ids = self.permutation[input_ids]
 
-        input_ids = input_ids.float()
-        x = input_ids.unsqueeze(-1)
+        # Normalize token IDs to [-1, 1]: x = 2 * p / (V - 1) - 1
+        x = 2.0 * input_ids.float() / (self.vocab_size - 1) - 1.0
+        x = x.unsqueeze(-1)  # (batch, seq, 1)
 
         if self.random_embeddings:
-            embeddings = x * self.random_proj.to(x.device)
+            # Random Fourier Features: sin(ω*x + b), cos(ω*x + b)
+            angles = x * self.random_freqs.to(x.device) + self.random_phases.to(x.device)
+            sin_emb = torch.sin(angles)
+            cos_emb = torch.cos(angles)
+            embeddings = torch.cat([sin_emb, cos_emb], dim=-1)
         else:
-            freqs = x * self.inv_freq.to(x.device)
-            sin_emb = torch.sin(freqs)
-            cos_emb = torch.cos(freqs)
+            # Fourier features: sin(k * π * x), cos(k * π * x) for k = 1, 2, ...
+            angles = math.pi * x * self.harmonics.to(x.device)
+            sin_emb = torch.sin(angles)
+            cos_emb = torch.cos(angles)
             embeddings = torch.cat([sin_emb, cos_emb], dim=-1)
 
         return embeddings
