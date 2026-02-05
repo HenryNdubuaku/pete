@@ -33,7 +33,8 @@ def update_best_results(name: str, metrics: Dict):
     results = load_results()
     results[name] = metrics
     save_results(results)
-    print(f"Results updated in {RESULTS_FILE}")
+    print(f"\n{RESULTS_FILE}:")
+    print(json.dumps(results, indent=2))
 
 
 def initialize_writer(name: str, is_master: bool) -> Optional[SummaryWriter]:

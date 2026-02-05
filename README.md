@@ -101,36 +101,18 @@ Check `src/trainer.py` (or potentially a separate script if arguments are added 
 
 The training script automatically runs evaluations on validation sets (like STS-B) during and after training. Results are logged to TensorBoard (`runs/`) and printed to the console. The best model weights are saved in the `weights/` directory.
 
-### Reprpducing key ablation
+### Reproducing key ablation
 ```bash
-  screen -S pete
+python main.py --batch-size 512 --num-epochs 20 --d-model 256 --permute-tokens && \
+python main.py --batch-size 512 --num-epochs 20 --d-model 256 --random-embeddings && \
 
-  # 1_256                                                              
-  python main.py --batch-size 512 --num-epochs 10 --d-model 256 && \
-  python main.py --batch-size 512 --num-epochs 10 --d-model 256
-  --permute-tokens && \
-  python main.py --batch-size 512 --num-epochs 10 --d-model 256
-  --random-embeddings && \
+# 1_512
+python main.py --batch-size 512 --num-epochs 20 --d-model 512 --permute-tokens && \
+python main.py --batch-size 512 --num-epochs 20 --d-model 512 --random-embeddings && \
 
-  # 1_512
-  python main.py --batch-size 512 --num-epochs 10 --d-model 512 && \
-  python main.py --batch-size 512 --num-epochs 10 --d-model 512
-  --permute-tokens && \
-  python main.py --batch-size 512 --num-epochs 10 --d-model 512
-  --random-embeddings && \
-
-  # 2_256
-  python main.py --batch-size 512 --num-epochs 10 --num-hidden-layers 2
-   --d-model 256 && \
-  python main.py --batch-size 512 --num-epochs 10 --num-hidden-layers 2
-   --d-model 256 --permute-tokens && \
-  python main.py --batch-size 512 --num-epochs 10 --num-hidden-layers 2
-   --d-model 256 --random-embeddings
-
-  # Detach: press Ctrl+A, then D
-
-  # Reattach later
-  screen -r pete
+# 2_256
+python main.py --batch-size 512 --num-epochs 20 --num-hidden-layers 2 --d-model 256 --permute-tokens && \
+python main.py --batch-size 512 --num-epochs 20 --num-hidden-layers 2 --d-model 256 --random-embeddings
 ```
 
 ### Using Different Polynomial Embeddings
