@@ -62,31 +62,38 @@ python main.py --batch-size 512 --num-epochs 10
 | `--num-epochs` | 5 | Number of epochs |
 | `--learning-rate` | 1e-5 | Learning rate |
 | `--include-baseline` | False | Also train standard transformer |
-| `--permute-tokens` | False | Ablation: randomize token IDs |
-| `--random-embeddings` | False | Ablation: use random projections |
+| `--permute-tokens` | False | Ablation: randomize token IDs before embedding |
+| `--random-embeddings` | False | Ablation: use Random Fourier Features |
+| `--index-mode` | raw | Index mapping: `raw`, `normalized`, or `scaled` |
+| `--index-scale` | 1.0 | Scale factor for `--index-mode=scaled` |
+| `--rff-sigma` | None | Frequency scale for Random Fourier Features |
 
 ### Evaluation
 
 The training script automatically runs evaluations on validation sets (like STS-B) during and after training. Results are logged to TensorBoard (`runs/`) and printed to the console. The best model weights are saved in the `weights/` directory.
 
-### Reproducing key ablation
+### Reproducing key ablations
 ```bash
 # Transformer baselines
 python main.py --batch-size 512 --num-epochs 10 --d-model 256 --include-baseline && \
 python main.py --batch-size 512 --num-epochs 10 --d-model 512 --include-baseline && \
-python main.py --batch-size 512 --num-epochs 10 --num-hidden-layers 2 --d-model 256 --include-baseline && \
+python main.py --batch-size 512 --num-epochs 10 --num-hidden-layers 2 --d-model 256 --include-baseline
 
 # 1_256 ablations
 python main.py --batch-size 512 --num-epochs 10 --d-model 256 --permute-tokens && \
 python main.py --batch-size 512 --num-epochs 10 --d-model 256 --random-embeddings && \
+python main.py --batch-size 512 --num-epochs 10 --d-model 256 --index-mode normalized && \
+python main.py --batch-size 512 --num-epochs 10 --d-model 256 --index-mode scaled --index-scale 0.001
 
 # 1_512 ablations
 python main.py --batch-size 512 --num-epochs 10 --d-model 512 --permute-tokens && \
 python main.py --batch-size 512 --num-epochs 10 --d-model 512 --random-embeddings && \
+python main.py --batch-size 512 --num-epochs 10 --d-model 512 --index-mode normalized
 
 # 2_256 ablations
 python main.py --batch-size 512 --num-epochs 10 --num-hidden-layers 2 --d-model 256 --permute-tokens && \
-python main.py --batch-size 512 --num-epochs 10 --num-hidden-layers 2 --d-model 256 --random-embeddings
+python main.py --batch-size 512 --num-epochs 10 --num-hidden-layers 2 --d-model 256 --random-embeddings && \
+python main.py --batch-size 512 --num-epochs 10 --num-hidden-layers 2 --d-model 256 --index-mode normalized
 ```
 
 ### Exploring embedding similarity

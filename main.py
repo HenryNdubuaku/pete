@@ -70,6 +70,9 @@ class Experiment:
             max_seq_len=self.max_seq_len,
             permute_tokens=getattr(args, 'permute_tokens', False),
             random_embeddings=getattr(args, 'random_embeddings', False),
+            index_mode=getattr(args, 'index_mode', 'raw'),
+            index_scale=getattr(args, 'index_scale', 1.0),
+            rff_sigma=getattr(args, 'rff_sigma', None),
         )
 
         if args.benchmark:
@@ -278,7 +281,26 @@ def main():
     parser.add_argument(
         "--random-embeddings",
         action="store_true",
-        help="Replace Fourier features with fixed Gaussian random projection (ablation).",
+        help="Replace Fourier features with Random Fourier Features (ablation).",
+    )
+    parser.add_argument(
+        "--index-mode",
+        type=str,
+        default="raw",
+        choices=["raw", "normalized", "scaled"],
+        help="Index mapping: 'raw' (x=p), 'normalized' (x=2*(p/(V-1))-1), 'scaled' (x=scale*p).",
+    )
+    parser.add_argument(
+        "--index-scale",
+        type=float,
+        default=1.0,
+        help="Scale factor when using --index-mode=scaled.",
+    )
+    parser.add_argument(
+        "--rff-sigma",
+        type=float,
+        default=None,
+        help="Frequency scale for Random Fourier Features (defaults to mean of inv_freq).",
     )
 
     args = parser.parse_args()
@@ -310,7 +332,15 @@ def main():
                 vocab_size=args.vocab_size,
             )
 
-            ablation = "permute" if args.permute_tokens else "random" if args.random_embeddings else None
+            # Build ablation suffix
+            ablation_parts = []
+            if args.permute_tokens:
+                ablation_parts.append("permute")
+            if args.random_embeddings:
+                ablation_parts.append("rff")
+            if args.index_mode != "raw":
+                ablation_parts.append(args.index_mode)
+            ablation = "_".join(ablation_parts) if ablation_parts else None
             run(experiment, ablation=ablation)
             return
 
