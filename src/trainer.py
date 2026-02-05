@@ -17,8 +17,12 @@ RESULTS_FILE = "results.json"
 
 def load_results() -> Dict:
     if os.path.exists(RESULTS_FILE):
-        with open(RESULTS_FILE, "r") as f:
-            return json.load(f)
+        try:
+            with open(RESULTS_FILE, "r") as f:
+                return json.load(f)
+        except json.JSONDecodeError:
+            print(f"Warning: {RESULTS_FILE} corrupted, starting fresh")
+            return {}
     return {}
 
 
