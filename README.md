@@ -103,16 +103,19 @@ The training script automatically runs evaluations on validation sets (like STS-
 
 ### Reproducing key ablation
 ```bash
-python main.py --batch-size 512 --num-epochs 20 --d-model 256 --permute-tokens && \
-python main.py --batch-size 512 --num-epochs 20 --d-model 256 --random-embeddings && \
+python main.py --batch-size 512 --num-epochs 10 --d-model 256 && \
+python main.py --batch-size 512 --num-epochs 10 --d-model 256 --permute-tokens && \
+python main.py --batch-size 512 --num-epochs 10 --d-model 256 --random-embeddings && \
 
 # 1_512
-python main.py --batch-size 512 --num-epochs 20 --d-model 512 --permute-tokens && \
-python main.py --batch-size 512 --num-epochs 20 --d-model 512 --random-embeddings && \
+python main.py --batch-size 512 --num-epochs 10 --d-model 512 && \
+python main.py --batch-size 512 --num-epochs 10 --d-model 512 --permute-tokens && \
+python main.py --batch-size 512 --num-epochs 10 --d-model 512 --random-embeddings && \
 
 # 2_256
-python main.py --batch-size 512 --num-epochs 20 --num-hidden-layers 2 --d-model 256 --permute-tokens && \
-python main.py --batch-size 512 --num-epochs 20 --num-hidden-layers 2 --d-model 256 --random-embeddings
+python main.py --batch-size 512 --num-epochs 10 --num-hidden-layers 2 --d-model 256 && \
+python main.py --batch-size 512 --num-epochs 10 --num-hidden-layers 2 --d-model 256 --permute-tokens && \
+python main.py --batch-size 512 --num-epochs 10 --num-hidden-layers 2 --d-model 256 --random-embeddings
 ```
 
 ### Using Different Polynomial Embeddings
