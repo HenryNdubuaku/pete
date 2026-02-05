@@ -2,7 +2,6 @@ import json
 import os
 from typing import Dict, Optional
 
-import numpy as np
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
@@ -134,7 +133,9 @@ def train_loop(
                 batch = tuple(t.to(device) for t in batch)
                 optimizer.zero_grad()
 
-                train_loss = embedder(batch)
+                with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                    train_loss = embedder(batch)
+
                 train_loss.backward()
                 optimizer.step()
                 scheduler.step()
@@ -158,10 +159,11 @@ def train_loop(
                 total_val_loss = 0.0
 
                 with torch.no_grad():
-                    for batch in val_loader:
-                        batch = tuple(t.to(device) for t in batch)
-                        val_loss = embedder(batch)
-                        total_val_loss += val_loss.item()
+                    with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                        for batch in val_loader:
+                            batch = tuple(t.to(device) for t in batch)
+                            val_loss = embedder(batch)
+                            total_val_loss += val_loss.item()
 
                 avg_val_loss = total_val_loss / (len(val_loader) + 1e-6)
 
