@@ -1,3 +1,4 @@
+import json
 import os
 from typing import Dict, List, Optional
 
@@ -12,6 +13,27 @@ from torch.utils.tensorboard import SummaryWriter
 from transformers import get_linear_schedule_with_warmup
 
 from src.benchmark import evaluate
+
+RESULTS_FILE = "results.json"
+
+
+def load_results() -> Dict:
+    if os.path.exists(RESULTS_FILE):
+        with open(RESULTS_FILE, "r") as f:
+            return json.load(f)
+    return {}
+
+
+def save_results(results: Dict):
+    with open(RESULTS_FILE, "w") as f:
+        json.dump(results, f, indent=2)
+
+
+def update_best_results(name: str, metrics: Dict):
+    results = load_results()
+    results[name] = metrics
+    save_results(results)
+    print(f"Results updated in {RESULTS_FILE}")
 
 
 def initialize_writer(name: str, is_master: bool) -> Optional[SummaryWriter]:
@@ -198,6 +220,7 @@ def train_loop(
                         save_best_model(embedder.module, name)
                     else:
                         save_best_model(embedder, name)
+                    update_best_results(name, results)
 
         if rank == 0:
             print("")

@@ -69,6 +69,7 @@ class Experiment:
             num_attention_heads=self.num_attention_heads,
             max_seq_len=self.max_seq_len,
             permute_tokens=getattr(args, 'permute_tokens', False),
+            random_embeddings=getattr(args, 'random_embeddings', False),
         )
 
         if args.benchmark:
@@ -121,7 +122,7 @@ class Experiment:
             )
 
 
-def run(experiment, suffix=None):
+def run(experiment, suffix=None, ablation=None):
     if suffix is None:
         suffix = f"{experiment.num_hidden_layers}_{experiment.d_model}"
 
@@ -138,6 +139,8 @@ def run(experiment, suffix=None):
 
     print("\nTraining PETE\n")
     name = f"pete_{suffix}"
+    if ablation:
+        name = f"{name}_{ablation}"
     with timer(f"PETE training ({name})"):
         pete_embedder = train(
             experiment.pete_embedder, experiment.pete_optimizer, experiment, name
@@ -267,6 +270,11 @@ def main():
         action="store_true",
         help="Randomly permute token IDs before Fourier embedding (ablation).",
     )
+    parser.add_argument(
+        "--random-embeddings",
+        action="store_true",
+        help="Replace Fourier features with fixed Gaussian random projection (ablation).",
+    )
 
     args = parser.parse_args()
 
@@ -297,10 +305,10 @@ def main():
                 vocab_size=args.vocab_size,
             )
 
-            run(experiment)
+            ablation = "permute" if args.permute_tokens else "random" if args.random_embeddings else None
+            run(experiment, ablation=ablation)
             return
 
 
 if __name__ == "__main__":
     main()
-    os.system("tensorboard --logdir=runs")

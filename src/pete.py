@@ -16,6 +16,10 @@ class PolynomialBlock(nn.Module):
     Transforms token IDs into dense embeddings using sinusoidal functions
     at different frequencies, similar to positional encodings but applied
     to token values.
+
+    Supports ablations:
+    - permute_tokens: Randomly permute token IDs before embedding
+    - random_embeddings: Use fixed Gaussian random projection instead of Fourier
     """
 
     def __init__(
@@ -25,20 +29,29 @@ class PolynomialBlock(nn.Module):
         base: float = 10000.0,
         vocab_size: int = None,
         permute_tokens: bool = False,
-        permutation_seed: int = 42,
+        random_embeddings: bool = False,
+        seed: int = 42,
     ):
         super(PolynomialBlock, self).__init__()
         self.max_seq_len = max_seq_len
         self.d_model = d_model
         self.base = base
         self.permute_tokens = permute_tokens
+        self.random_embeddings = random_embeddings
 
-        inv_freq = 1.0 / (base ** (torch.arange(0, d_model, 2).float() / d_model))
-        self.register_buffer("inv_freq", inv_freq)
+        if random_embeddings:
+            # Fixed Gaussian random projection: x -> x * W
+            generator = torch.Generator().manual_seed(seed)
+            random_proj = torch.randn(1, d_model, generator=generator)
+            self.register_buffer("random_proj", random_proj)
+        else:
+            # Fourier frequencies
+            inv_freq = 1.0 / (base ** (torch.arange(0, d_model, 2).float() / d_model))
+            self.register_buffer("inv_freq", inv_freq)
 
         if permute_tokens:
             assert vocab_size is not None, "vocab_size required when permute_tokens=True"
-            generator = torch.Generator().manual_seed(permutation_seed)
+            generator = torch.Generator().manual_seed(seed)
             permutation = torch.randperm(vocab_size, generator=generator)
             self.register_buffer("permutation", permutation)
 
@@ -48,7 +61,7 @@ class PolynomialBlock(nn.Module):
             input_ids: Token IDs of shape (batch_size, seq_len)
 
         Returns:
-            Fourier embeddings of shape (batch_size, seq_len, d_model)
+            Embeddings of shape (batch_size, seq_len, d_model)
         """
         if self.permute_tokens:
             input_ids = self.permutation[input_ids]
@@ -58,12 +71,15 @@ class PolynomialBlock(nn.Module):
         # Shape: (batch_size, seq_len, 1)
         x = input_ids.unsqueeze(-1)
 
-        freqs = x * self.inv_freq.to(x.device)
-
-        sin_emb = torch.sin(freqs)
-        cos_emb = torch.cos(freqs)
-
-        embeddings = torch.cat([sin_emb, cos_emb], dim=-1)
+        if self.random_embeddings:
+            # Random Gaussian projection: x * W
+            embeddings = x * self.random_proj.to(x.device)
+        else:
+            # Fourier features
+            freqs = x * self.inv_freq.to(x.device)
+            sin_emb = torch.sin(freqs)
+            cos_emb = torch.cos(freqs)
+            embeddings = torch.cat([sin_emb, cos_emb], dim=-1)
 
         return embeddings
 
@@ -233,6 +249,7 @@ class PETE(nn.Module):
         num_attention_heads,
         max_seq_len,
         permute_tokens: bool = False,
+        random_embeddings: bool = False,
     ):
         super(PETE, self).__init__()
         self.expansion = PolynomialBlock(
@@ -240,6 +257,7 @@ class PETE(nn.Module):
             d_model,
             vocab_size=vocab_size,
             permute_tokens=permute_tokens,
+            random_embeddings=random_embeddings,
         )
         self.mlp = nn.Linear(d_model, d_model)
         self.norm = RMSNorm(d_model)
