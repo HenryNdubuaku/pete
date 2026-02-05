@@ -5,32 +5,67 @@ import numpy as np
 import torch
 from torch import nn
 
-import polynomial_embeddings
-
 torch.manual_seed(0)
 np.random.seed(0)
 
 
 class PolynomialBlock(nn.Module):
-    """Uses fused CUDA kernel for normalization and Chebyshev expansion."""
+    """
+    Pure PyTorch implementation of Fourier embeddings.
 
-    def __init__(self, max_seq_len: int, d_model: int):
+    Transforms token IDs into dense embeddings using sinusoidal functions
+    at different frequencies, similar to positional encodings but applied
+    to token values.
+    """
+
+    def __init__(
+        self,
+        max_seq_len: int,
+        d_model: int,
+        base: float = 10000.0,
+        vocab_size: int = None,
+        permute_tokens: bool = False,
+        permutation_seed: int = 42,
+    ):
         super(PolynomialBlock, self).__init__()
         self.max_seq_len = max_seq_len
         self.d_model = d_model
+        self.base = base
+        self.permute_tokens = permute_tokens
+
+        inv_freq = 1.0 / (base ** (torch.arange(0, d_model, 2).float() / d_model))
+        self.register_buffer("inv_freq", inv_freq)
+
+        if permute_tokens:
+            assert vocab_size is not None, "vocab_size required when permute_tokens=True"
+            generator = torch.Generator().manual_seed(permutation_seed)
+            permutation = torch.randperm(vocab_size, generator=generator)
+            self.register_buffer("permutation", permutation)
 
     def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
-        # Removed explicit CUDA check to allow CPU execution
-        # if not input_ids.is_cuda:
-        #     raise ValueError("Input tensor must be on CUDA")
+        """
+        Args:
+            input_ids: Token IDs of shape (batch_size, seq_len)
 
-        # Call the polynomial kernels (will dispatch to CPU/CUDA based on build)
-        input_ids = input_ids.float() # Ensure float type
-        # Note: Currently hardcoded to fourier. Consider making this configurable.
-        embeddings = polynomial_embeddings.fourier(
-            input_ids, self.max_seq_len, self.d_model
-        )
-        return embeddings[0]
+        Returns:
+            Fourier embeddings of shape (batch_size, seq_len, d_model)
+        """
+        if self.permute_tokens:
+            input_ids = self.permutation[input_ids]
+
+        input_ids = input_ids.float()
+
+        # Shape: (batch_size, seq_len, 1)
+        x = input_ids.unsqueeze(-1)
+
+        freqs = x * self.inv_freq.to(x.device)
+
+        sin_emb = torch.sin(freqs)
+        cos_emb = torch.cos(freqs)
+
+        embeddings = torch.cat([sin_emb, cos_emb], dim=-1)
+
+        return embeddings
 
 
 class RotaryPositionEncoding(nn.Module):
@@ -197,9 +232,15 @@ class PETE(nn.Module):
         num_hidden_layers,
         num_attention_heads,
         max_seq_len,
+        permute_tokens: bool = False,
     ):
         super(PETE, self).__init__()
-        self.expansion = PolynomialBlock(max_seq_len, d_model)
+        self.expansion = PolynomialBlock(
+            max_seq_len,
+            d_model,
+            vocab_size=vocab_size,
+            permute_tokens=permute_tokens,
+        )
         self.mlp = nn.Linear(d_model, d_model)
         self.norm = RMSNorm(d_model)
         self.d_model = d_model
