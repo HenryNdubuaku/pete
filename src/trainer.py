@@ -6,7 +6,7 @@ import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 import torch.nn.functional as F
-from torch.cuda.amp import GradScaler
+from torch.amp import GradScaler
 from torch.utils.data import DataLoader, DistributedSampler
 from torch.utils.tensorboard import SummaryWriter
 from transformers import get_linear_schedule_with_warmup
@@ -34,6 +34,7 @@ def setup_scheduler(optimizer, warmup_steps: int, total_steps: int):
 
 def setup_scaler() -> GradScaler:
     return GradScaler(
+        "cuda",
         init_scale=2.0**16,  # Initial scale (default: 2^16)
         growth_factor=2.0,  # Factor to increase the scale (default: 2.0)
         backoff_factor=0.5,  # Factor to decrease the scale (default: 0.5)
@@ -178,10 +179,12 @@ def train_loop(
             if writer and rank == 0:
                 # For DDP, use the underlying model
                 model_to_evaluate = embedder.module if is_ddp else embedder
+                # Evaluate on validation datasets (e.g., stsb for contrastive training)
+                eval_dataset = experiment.validation_datasets[0] if experiment.validation_datasets else dataset_name
                 results = evaluate(
-                    model_to_evaluate, data.data_loaders, device, dataset_name, name
+                    model_to_evaluate, data.data_loaders, device, eval_dataset, name
                 )
-                print(f"{dataset_name} Validation: {results}")
+                print(f"{eval_dataset} Validation: {results}")
 
                 for metric, score in results.items():
                     log_metrics(writer, dataset_name, metric, score, global_step)
