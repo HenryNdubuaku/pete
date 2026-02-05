@@ -1,5 +1,6 @@
 import math
 from collections import OrderedDict
+from typing import Optional
 
 import numpy as np
 import torch
@@ -40,7 +41,7 @@ class PolynomialBlock(nn.Module):
         index_mode: str = "raw",
         index_scale: float = 1.0,
         # Optional: control RFF frequency scale; if None, defaults to mean(inv_freq)
-        rff_sigma: float | None = None,
+        rff_sigma: Optional[float] = None,
     ):
         super().__init__()
         if d_model % 2 != 0:
@@ -300,7 +301,7 @@ class PETE(nn.Module):
         random_embeddings: bool = False,
         index_mode: str = "raw",
         index_scale: float = 1.0,
-        rff_sigma: float | None = None,
+        rff_sigma: Optional[float] = None,
     ):
         super(PETE, self).__init__()
         self.expansion = PolynomialBlock(

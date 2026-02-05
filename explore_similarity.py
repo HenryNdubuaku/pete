@@ -20,7 +20,16 @@ from src.pete import PETE
 from src.transformer import Transformer
 
 
-def load_models(config: str, vocab_size: int, max_seq_len: int):
+def load_models(
+    config: str,
+    vocab_size: int,
+    max_seq_len: int,
+    index_mode: str = "raw",
+    index_scale: float = 1.0,
+    rff_sigma: float = None,
+    permute_tokens: bool = False,
+    random_embeddings: bool = False,
+):
     """Load PETE and Transformer models from saved weights."""
     parts = config.split("_")
     num_layers = int(parts[0])
@@ -32,6 +41,11 @@ def load_models(config: str, vocab_size: int, max_seq_len: int):
         num_hidden_layers=num_layers,
         num_attention_heads=num_layers,
         max_seq_len=max_seq_len,
+        index_mode=index_mode,
+        index_scale=index_scale,
+        rff_sigma=rff_sigma,
+        permute_tokens=permute_tokens,
+        random_embeddings=random_embeddings,
     )
 
     transformer = Transformer(
@@ -50,13 +64,39 @@ def load_models(config: str, vocab_size: int, max_seq_len: int):
     transformer_path = f"weights/transformer_{config}.pt"
 
     if os.path.exists(pete_path):
-        pete.load_state_dict(torch.load(pete_path, map_location="cpu"))
+        state_dict = torch.load(pete_path, map_location="cpu", weights_only=False)
+        # Handle weights saved from Embedder wrapper (prefixed with "model.")
+        new_state_dict = {}
+        for k, v in state_dict.items():
+            if k.startswith("model."):
+                new_key = k[6:]  # Remove "model." prefix
+                new_state_dict[new_key] = v
+            elif k in ("temperature", "classifier.weight", "classifier.bias"):
+                # Skip Embedder-specific keys
+                continue
+            else:
+                new_state_dict[k] = v
+        # Handle old key names (harmonics -> inv_freq)
+        if "expansion.harmonics" in new_state_dict and "expansion.inv_freq" not in new_state_dict:
+            new_state_dict["expansion.inv_freq"] = new_state_dict.pop("expansion.harmonics")
+        pete.load_state_dict(new_state_dict, strict=False)
         print(f"Loaded PETE weights from {pete_path}")
     else:
         print(f"Warning: {pete_path} not found, using random weights")
 
     if os.path.exists(transformer_path):
-        transformer.load_state_dict(torch.load(transformer_path, map_location="cpu"))
+        state_dict = torch.load(transformer_path, map_location="cpu", weights_only=False)
+        # Handle weights saved from Embedder wrapper (prefixed with "model.")
+        new_state_dict = {}
+        for k, v in state_dict.items():
+            if k.startswith("model."):
+                new_key = k[6:]  # Remove "model." prefix
+                new_state_dict[new_key] = v
+            elif k in ("temperature", "classifier.weight", "classifier.bias"):
+                continue
+            else:
+                new_state_dict[k] = v
+        transformer.load_state_dict(new_state_dict, strict=False)
         print(f"Loaded Transformer weights from {transformer_path}")
     else:
         print(f"Warning: {transformer_path} not found, using random weights")
@@ -186,13 +226,28 @@ def main():
     parser.add_argument("--vocab-size", type=int, default=30522, help="Vocabulary size")
     parser.add_argument("--max-seq-len", type=int, default=128, help="Max sequence length")
     parser.add_argument("--batch-size", type=int, default=64, help="Batch size")
+    parser.add_argument("--index-mode", type=str, default="raw", choices=["raw", "normalized", "scaled"],
+                        help="Index mapping mode")
+    parser.add_argument("--index-scale", type=float, default=1.0, help="Scale for index-mode=scaled")
+    parser.add_argument("--rff-sigma", type=float, default=None, help="RFF frequency scale")
+    parser.add_argument("--permute-tokens", action="store_true", help="Use permuted token IDs")
+    parser.add_argument("--random-embeddings", action="store_true", help="Use Random Fourier Features")
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
     # Load models
-    pete, transformer = load_models(args.config, args.vocab_size, args.max_seq_len)
+    pete, transformer = load_models(
+        args.config,
+        args.vocab_size,
+        args.max_seq_len,
+        index_mode=args.index_mode,
+        index_scale=args.index_scale,
+        rff_sigma=args.rff_sigma,
+        permute_tokens=args.permute_tokens,
+        random_embeddings=args.random_embeddings,
+    )
 
     # Load tokenizer and data
     tokenizer = BertTokenizer.from_pretrained("google-bert/bert-base-uncased")
