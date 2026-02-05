@@ -68,7 +68,7 @@ class Experiment:
             num_hidden_layers=self.num_hidden_layers,
             num_attention_heads=self.num_attention_heads,
             max_seq_len=self.max_seq_len,
-            permute_tokens=True,
+            permute_tokens=getattr(args, 'permute_tokens', False),
         )
 
         if args.benchmark:
@@ -261,6 +261,11 @@ def main():
     )
     parser.add_argument(
         "--vocab-size", type=int, default=30552, help="Vocabulary size."
+    )
+    parser.add_argument(
+        "--permute-tokens",
+        action="store_true",
+        help="Randomly permute token IDs before Fourier embedding (ablation).",
     )
 
     args = parser.parse_args()
