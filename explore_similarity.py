@@ -223,7 +223,7 @@ def analyze_per_token(pete: PETE, transformer: Transformer, vocab_size: int, dev
 def main():
     parser = argparse.ArgumentParser(description="Explore PETE vs Transformer embeddings")
     parser.add_argument("--config", type=str, default="1_128", help="Model config (e.g., 1_128, 2_256)")
-    parser.add_argument("--vocab-size", type=int, default=30522, help="Vocabulary size")
+    parser.add_argument("--vocab-size", type=int, default=30552, help="Vocabulary size")
     parser.add_argument("--max-seq-len", type=int, default=128, help="Max sequence length")
     parser.add_argument("--batch-size", type=int, default=64, help="Batch size")
     parser.add_argument("--index-mode", type=str, default="raw", choices=["raw", "normalized", "scaled"],
