@@ -168,7 +168,7 @@ def evaluate(
         model.load_state_dict(state_dict)
 
         with torch.no_grad():
-            with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+            with torch.autocast(device_type="cuda", dtype=torch.float16):
                 for batch in data_loader[dataset_name]["test"]:
                     batch = [x.to(device) for x in batch]
                     preds = model.get_predictions(batch).float().cpu().numpy()
@@ -216,13 +216,13 @@ def evaluate(
     all_labels = []
 
     with torch.no_grad():
-        with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+        with torch.autocast(device_type="cuda", dtype=torch.float16):
             for batch in data_loader[dataset_name]["validation"]:
                 batch = [x.to(device) for x in batch]
                 preds = model.get_predictions(batch)
                 labels = batch[-1].long()
 
-                all_preds.append(preds.cpu())
+                all_preds.append(preds.float().cpu())
                 all_labels.append(labels.cpu())
 
     all_preds = torch.cat(all_preds).float().numpy()

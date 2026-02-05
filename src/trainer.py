@@ -5,6 +5,7 @@ from typing import Dict, Optional
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
+from torch.amp import GradScaler
 from torch.utils.data import DataLoader, DistributedSampler
 from torch.utils.tensorboard import SummaryWriter
 from transformers import get_linear_schedule_with_warmup
@@ -53,6 +54,10 @@ def setup_scheduler(optimizer, warmup_steps: int, total_steps: int):
     )
 
 
+def setup_scaler() -> GradScaler:
+    return GradScaler("cuda")
+
+
 def log_metrics(
     writer: SummaryWriter,
     dataset_name: str,
@@ -90,6 +95,7 @@ def train_loop(
     total_steps = total_steps_per_epoch * num_epochs
 
     scheduler = setup_scheduler(optimizer, warmup_steps, total_steps)
+    scaler = setup_scaler()
 
     global_step = 0
     best_stsb_score = -float("inf")
@@ -134,11 +140,12 @@ def train_loop(
                 batch = tuple(t.to(device) for t in batch)
                 optimizer.zero_grad()
 
-                with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                with torch.autocast(device_type="cuda", dtype=torch.float16):
                     train_loss = embedder(batch)
 
-                train_loss.backward()
-                optimizer.step()
+                scaler.scale(train_loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
                 scheduler.step()
 
                 total_train_loss += train_loss.item()
@@ -160,7 +167,7 @@ def train_loop(
                 total_val_loss = 0.0
 
                 with torch.no_grad():
-                    with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                    with torch.autocast(device_type="cuda", dtype=torch.float16):
                         for batch in val_loader:
                             batch = tuple(t.to(device) for t in batch)
                             val_loss = embedder(batch)
