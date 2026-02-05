@@ -7,6 +7,12 @@ import torch.nn.functional as F
 from sklearn.manifold import TSNE
 
 
+def cosine_sim(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+    a = F.normalize(a, p=2, dim=1)
+    b = F.normalize(b, p=2, dim=1)
+    return a @ b.T
+
+
 class Embedder(nn.Module):
     def __init__(self, model, num_outputs, num_sentences):
         super(Embedder, self).__init__()
