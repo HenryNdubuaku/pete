@@ -28,7 +28,8 @@ def save_results(results: Dict):
 
 def update_best_results(name: str, metrics: Dict):
     results = load_results()
-    results[name] = metrics
+    # Convert numpy types to Python floats for JSON serialization
+    results[name] = {k: float(v) for k, v in metrics.items()}
     save_results(results)
     print(f"\n{RESULTS_FILE}:")
     print(json.dumps(results, indent=2))
