@@ -67,15 +67,11 @@ class PolynomialBlock(nn.Module):
             input_ids = self.permutation[input_ids]
 
         input_ids = input_ids.float()
-
-        # Shape: (batch_size, seq_len, 1)
         x = input_ids.unsqueeze(-1)
 
         if self.random_embeddings:
-            # Random Gaussian projection: x * W
             embeddings = x * self.random_proj.to(x.device)
         else:
-            # Fourier features
             freqs = x * self.inv_freq.to(x.device)
             sin_emb = torch.sin(freqs)
             cos_emb = torch.cos(freqs)
