@@ -41,7 +41,7 @@ def create_dataloader(
     sentence2_key=None,
     label_key=None,
 ):
-    sentences1 = ds_split[sentence1_key]
+    sentences1 = list(ds_split[sentence1_key])
     encodings1 = tokenize_texts(sentences1, tokenizer, max_length)
 
     # Cast attention_mask to float32
@@ -53,7 +53,7 @@ def create_dataloader(
     ]
 
     if sentence2_key is not None:
-        sentences2 = ds_split[sentence2_key]
+        sentences2 = list(ds_split[sentence2_key])
         encodings2 = tokenize_texts(sentences2, tokenizer, max_length)
 
         # Cast attention_mask to float32
@@ -62,7 +62,7 @@ def create_dataloader(
         tensors.extend([encodings2["input_ids"], encodings2["attention_mask"]])
 
     if label_key is not None:
-        labels = ds_split[label_key]
+        labels = list(ds_split[label_key])
         tensors.append(torch.tensor(labels, dtype=torch.float32))
 
     dataset = TensorDataset(*tensors)
