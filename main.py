@@ -45,7 +45,7 @@ class Experiment:
         self.hidden_dropout_prob = dropout_prob
         self.attention_probs_dropout_prob = dropout_prob
         self.max_seq_len = max_seq_len
-        self.tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
+        self.tokenizer = BertTokenizer.from_pretrained("google-bert/bert-base-uncased")
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.batch_size = batch_size
         self.num_epochs = num_epochs
@@ -68,6 +68,7 @@ class Experiment:
             num_hidden_layers=self.num_hidden_layers,
             num_attention_heads=self.num_attention_heads,
             max_seq_len=self.max_seq_len,
+            permute_tokens=True,
         )
 
         if args.benchmark:
