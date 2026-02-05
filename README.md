@@ -80,7 +80,7 @@ python main.py --batch-size 512 --num-epochs 10 --d-model 512 --include-baseline
 python main.py --batch-size 512 --num-epochs 10 --num-hidden-layers 2 --d-model 256 --include-baseline
 
 # 2_256 ablations
-python main.py --batch-size 512 --num-epochs 10 --num-hidden-layers 2 --d-model 256 --include-baseline
+python main.py --batch-size 512 --num-epochs 10 --num-hidden-layers 2 --d-model 256
 python main.py --batch-size 512 --num-epochs 10 --num-hidden-layers 2 --d-model 256 --permute-tokens && \
 python main.py --batch-size 512 --num-epochs 10 --num-hidden-layers 2 --d-model 256 --random-embeddings && \
 python main.py --batch-size 512 --num-epochs 10 --num-hidden-layers 2 --d-model 256 --index-mode normalized && \
