@@ -1,13 +1,11 @@
 import json
 import os
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 import numpy as np
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
-import torch.nn.functional as F
-from torch.amp import GradScaler
 from torch.utils.data import DataLoader, DistributedSampler
 from torch.utils.tensorboard import SummaryWriter
 from transformers import get_linear_schedule_with_warmup
@@ -55,17 +53,6 @@ def setup_scheduler(optimizer, warmup_steps: int, total_steps: int):
     )
 
 
-def setup_scaler() -> GradScaler:
-    return GradScaler(
-        "cuda",
-        init_scale=2.0**16,  # Initial scale (default: 2^16)
-        growth_factor=2.0,  # Factor to increase the scale (default: 2.0)
-        backoff_factor=0.5,  # Factor to decrease the scale (default: 0.5)
-        growth_interval=2000,  # Steps before increasing the scale (default: 2000)
-        enabled=True,  # Enable or disable the scaler (default: True)
-    )
-
-
 def log_metrics(
     writer: SummaryWriter,
     dataset_name: str,
@@ -103,7 +90,6 @@ def train_loop(
     total_steps = total_steps_per_epoch * num_epochs
 
     scheduler = setup_scheduler(optimizer, warmup_steps, total_steps)
-    scaler = setup_scaler()
 
     global_step = 0
     best_stsb_score = -float("inf")
@@ -146,16 +132,12 @@ def train_loop(
 
             for batch in train_loader:
                 batch = tuple(t.to(device) for t in batch)
-                # optimizer.zero_grad()
-
-                with torch.autocast(device_type="cuda", dtype=torch.float16):
-                    train_loss = embedder(batch)
-
-                scaler.scale(train_loss).backward()
-                scaler.step(optimizer)
-                scaler.update()
-                scheduler.step()
                 optimizer.zero_grad()
+
+                train_loss = embedder(batch)
+                train_loss.backward()
+                optimizer.step()
+                scheduler.step()
 
                 total_train_loss += train_loss.item()
                 global_step += 1
@@ -176,11 +158,10 @@ def train_loop(
                 total_val_loss = 0.0
 
                 with torch.no_grad():
-                    with torch.autocast(device_type="cuda", dtype=torch.float16):
-                        for batch in val_loader:
-                            batch = tuple(t.to(device) for t in batch)
-                            val_loss = embedder(batch)
-                            total_val_loss += val_loss.item()
+                    for batch in val_loader:
+                        batch = tuple(t.to(device) for t in batch)
+                        val_loss = embedder(batch)
+                        total_val_loss += val_loss.item()
 
                 avg_val_loss = total_val_loss / (len(val_loader) + 1e-6)
 
