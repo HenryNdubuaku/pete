@@ -202,13 +202,6 @@ def train_loop(
         if rank == 0:
             print("")
 
-    if writer and rank == 0:
-        # For DDP, use the underlying model
-        model_to_evaluate = embedder.module if is_ddp else embedder
-        evaluate(
-            model_to_evaluate, data.data_loaders, device, dataset_name, name, test=True
-        )
-
     return embedder
 
 
