@@ -199,20 +199,13 @@ class Layer(nn.Module):
         return tensor.view(new_shape)
 
     def attn(self, q, k, v, attention_mask):
-        dot_product = torch.matmul(q, k.transpose(-1, -2))
-        scaled_dot_product = dot_product / math.sqrt(self.attention_head_size)
-
         if attention_mask is not None:
-            attention_mask = attention_mask == 1
-            attention_mask = attention_mask.unsqueeze(1).unsqueeze(2)
-            scaled_dot_product = torch.where(
-                attention_mask,
-                scaled_dot_product,
-                torch.tensor(float("-inf"), device=q.device),
-            )
+            attention_mask = (attention_mask == 1).unsqueeze(1).unsqueeze(2)
+            attention_mask = attention_mask.expand(-1, -1, q.size(2), -1)
 
-        attention_weights = nn.functional.softmax(scaled_dot_product, dim=-1)
-        return torch.matmul(attention_weights, v)
+        return nn.functional.scaled_dot_product_attention(
+            q, k, v, attn_mask=attention_mask, dropout_p=0.0
+        )
 
     def forward(self, x, attention_mask):
         residual = x
@@ -237,7 +230,7 @@ class Layer(nn.Module):
 
         residual = x
         x = self.positional_ff(x)
-        x = self.norm2(attended_outputs + residual)
+        x = self.norm2(x + residual)
 
         return x
 

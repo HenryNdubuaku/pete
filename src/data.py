@@ -76,7 +76,8 @@ def create_dataloader(
 
     dataset = TensorDataset(*tensors)
     dataloader = DataLoader(
-        dataset, batch_size=batch_size, shuffle=True, drop_last=True
+        dataset, batch_size=batch_size, shuffle=True, drop_last=True,
+        pin_memory=True, num_workers=0  # num_workers=0 is fine for TensorDataset
     )
 
     if return_tensors:

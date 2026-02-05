@@ -85,8 +85,11 @@ class Experiment:
             pete.load_state_dict(state_dict)
 
         self.pete_embedder = Embedder(pete, num_outputs, num_sentences)
+        
+        if torch.cuda.is_available():
+            self.pete_embedder = torch.compile(self.pete_embedder)
         self.pete_optimizer = AdamW(
-            self.pete_embedder.parameters(), lr=self.learning_rate
+            self.pete_embedder.parameters(), lr=self.learning_rate, fused=True
         )
         print(
             f"\nNum of params PETE: {sum(p.numel() for p in pete.parameters() if p.requires_grad)}"
@@ -114,8 +117,10 @@ class Experiment:
             self.transformer_embedder = Embedder(
                 transformer, num_outputs, num_sentences
             )
+            if torch.cuda.is_available():
+                self.transformer_embedder = torch.compile(self.transformer_embedder)
             self.transformer_optimizer = AdamW(
-                self.transformer_embedder.parameters(), lr=self.learning_rate
+                self.transformer_embedder.parameters(), lr=self.learning_rate, fused=True
             )
             print(
                 f"Num of params in Transformer: {sum(p.numel() for p in transformer.parameters() if p.requires_grad)}"
