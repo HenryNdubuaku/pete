@@ -1,17 +1,43 @@
+import json
 import os
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
-import numpy as np
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
-import torch.nn.functional as F
-from torch.cuda.amp import GradScaler
+from torch.amp import GradScaler
 from torch.utils.data import DataLoader, DistributedSampler
 from torch.utils.tensorboard import SummaryWriter
 from transformers import get_linear_schedule_with_warmup
 
 from src.benchmark import evaluate
+
+RESULTS_FILE = "results.json"
+
+
+def load_results() -> Dict:
+    if os.path.exists(RESULTS_FILE):
+        try:
+            with open(RESULTS_FILE, "r") as f:
+                return json.load(f)
+        except json.JSONDecodeError:
+            print(f"Warning: {RESULTS_FILE} corrupted, starting fresh")
+            return {}
+    return {}
+
+
+def save_results(results: Dict):
+    with open(RESULTS_FILE, "w") as f:
+        json.dump(results, f, indent=2)
+
+
+def update_best_results(name: str, metrics: Dict):
+    results = load_results()
+    # Convert numpy types to Python floats for JSON serialization
+    results[name] = {k: float(v) for k, v in metrics.items()}
+    save_results(results)
+    print(f"\n{RESULTS_FILE}:")
+    print(json.dumps(results, indent=2))
 
 
 def initialize_writer(name: str, is_master: bool) -> Optional[SummaryWriter]:
@@ -33,13 +59,7 @@ def setup_scheduler(optimizer, warmup_steps: int, total_steps: int):
 
 
 def setup_scaler() -> GradScaler:
-    return GradScaler(
-        init_scale=2.0**16,  # Initial scale (default: 2^16)
-        growth_factor=2.0,  # Factor to increase the scale (default: 2.0)
-        backoff_factor=0.5,  # Factor to decrease the scale (default: 0.5)
-        growth_interval=2000,  # Steps before increasing the scale (default: 2000)
-        enabled=True,  # Enable or disable the scaler (default: True)
-    )
+    return GradScaler("cuda")
 
 
 def log_metrics(
@@ -122,7 +142,7 @@ def train_loop(
 
             for batch in train_loader:
                 batch = tuple(t.to(device) for t in batch)
-                # optimizer.zero_grad()
+                optimizer.zero_grad()
 
                 with torch.autocast(device_type="cuda", dtype=torch.float16):
                     train_loss = embedder(batch)
@@ -131,7 +151,6 @@ def train_loop(
                 scaler.step(optimizer)
                 scaler.update()
                 scheduler.step()
-                optimizer.zero_grad()
 
                 total_train_loss += train_loss.item()
                 global_step += 1
@@ -178,10 +197,12 @@ def train_loop(
             if writer and rank == 0:
                 # For DDP, use the underlying model
                 model_to_evaluate = embedder.module if is_ddp else embedder
+                # Evaluate on validation datasets (e.g., stsb for contrastive training)
+                eval_dataset = experiment.validation_datasets[0] if experiment.validation_datasets else dataset_name
                 results = evaluate(
-                    model_to_evaluate, data.data_loaders, device, dataset_name, name
+                    model_to_evaluate, data.data_loaders, device, eval_dataset, name
                 )
-                print(f"{dataset_name} Validation: {results}")
+                print(f"{eval_dataset} Validation: {results}")
 
                 for metric, score in results.items():
                     log_metrics(writer, dataset_name, metric, score, global_step)
@@ -195,16 +216,10 @@ def train_loop(
                         save_best_model(embedder.module, name)
                     else:
                         save_best_model(embedder, name)
+                    update_best_results(name, results)
 
         if rank == 0:
             print("")
-
-    if writer and rank == 0:
-        # For DDP, use the underlying model
-        model_to_evaluate = embedder.module if is_ddp else embedder
-        evaluate(
-            model_to_evaluate, data.data_loaders, device, dataset_name, name, test=True
-        )
 
     return embedder
 

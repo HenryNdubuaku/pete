@@ -45,7 +45,7 @@ class Experiment:
         self.hidden_dropout_prob = dropout_prob
         self.attention_probs_dropout_prob = dropout_prob
         self.max_seq_len = max_seq_len
-        self.tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
+        self.tokenizer = BertTokenizer.from_pretrained("google-bert/bert-base-uncased")
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.batch_size = batch_size
         self.num_epochs = num_epochs
@@ -68,6 +68,11 @@ class Experiment:
             num_hidden_layers=self.num_hidden_layers,
             num_attention_heads=self.num_attention_heads,
             max_seq_len=self.max_seq_len,
+            permute_tokens=getattr(args, 'permute_tokens', False),
+            random_embeddings=getattr(args, 'random_embeddings', False),
+            index_mode=getattr(args, 'index_mode', 'raw'),
+            index_scale=getattr(args, 'index_scale', 1.0),
+            rff_sigma=getattr(args, 'rff_sigma', None),
         )
 
         if args.benchmark:
@@ -83,9 +88,7 @@ class Experiment:
             pete.load_state_dict(state_dict)
 
         self.pete_embedder = Embedder(pete, num_outputs, num_sentences)
-        self.pete_optimizer = AdamW(
-            self.pete_embedder.parameters(), lr=self.learning_rate
-        )
+        self.pete_optimizer = AdamW(self.pete_embedder.parameters(), lr=self.learning_rate)
         print(
             f"\nNum of params PETE: {sum(p.numel() for p in pete.parameters() if p.requires_grad)}"
         )
@@ -120,7 +123,7 @@ class Experiment:
             )
 
 
-def run(experiment, suffix=None):
+def run(experiment, suffix=None, ablation=None):
     if suffix is None:
         suffix = f"{experiment.num_hidden_layers}_{experiment.d_model}"
 
@@ -137,6 +140,8 @@ def run(experiment, suffix=None):
 
     print("\nTraining PETE\n")
     name = f"pete_{suffix}"
+    if ablation:
+        name = f"{name}_{ablation}"
     with timer(f"PETE training ({name})"):
         pete_embedder = train(
             experiment.pete_embedder, experiment.pete_optimizer, experiment, name
@@ -261,6 +266,35 @@ def main():
     parser.add_argument(
         "--vocab-size", type=int, default=30552, help="Vocabulary size."
     )
+    parser.add_argument(
+        "--permute-tokens",
+        action="store_true",
+        help="Randomly permute token IDs before Fourier embedding (ablation).",
+    )
+    parser.add_argument(
+        "--random-embeddings",
+        action="store_true",
+        help="Replace Fourier features with Random Fourier Features (ablation).",
+    )
+    parser.add_argument(
+        "--index-mode",
+        type=str,
+        default="raw",
+        choices=["raw", "normalized", "scaled"],
+        help="Index mapping: 'raw' (x=p), 'normalized' (x=2*(p/(V-1))-1), 'scaled' (x=scale*p).",
+    )
+    parser.add_argument(
+        "--index-scale",
+        type=float,
+        default=1.0,
+        help="Scale factor when using --index-mode=scaled.",
+    )
+    parser.add_argument(
+        "--rff-sigma",
+        type=float,
+        default=None,
+        help="Frequency scale for Random Fourier Features (defaults to mean of inv_freq).",
+    )
 
     args = parser.parse_args()
 
@@ -291,10 +325,18 @@ def main():
                 vocab_size=args.vocab_size,
             )
 
-            run(experiment)
+            # Build ablation suffix
+            ablation_parts = []
+            if args.permute_tokens:
+                ablation_parts.append("permute")
+            if args.random_embeddings:
+                ablation_parts.append("rff")
+            if args.index_mode != "raw":
+                ablation_parts.append(args.index_mode)
+            ablation = "_".join(ablation_parts) if ablation_parts else None
+            run(experiment, ablation=ablation)
             return
 
 
 if __name__ == "__main__":
     main()
-    os.system("tensorboard --logdir=runs")

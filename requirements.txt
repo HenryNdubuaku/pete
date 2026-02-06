@@ -1,0 +1,9 @@
+torch
+transformers
+scikit-learn
+numpy
+datasets
+scipy
+matplotlib
+tensorboard
+triton

@@ -1,36 +1,143 @@
 import math
 from collections import OrderedDict
+from typing import Optional
 
 import numpy as np
 import torch
 from torch import nn
-
-import polynomial_embeddings
 
 torch.manual_seed(0)
 np.random.seed(0)
 
 
 class PolynomialBlock(nn.Module):
-    """Uses fused CUDA kernel for normalization and Chebyshev expansion."""
+    """
+    Pure PyTorch implementation of PETE-style fixed Fourier features over token IDs.
 
-    def __init__(self, max_seq_len: int, d_model: int):
-        super(PolynomialBlock, self).__init__()
+    Transforms token IDs into dense embeddings using sinusoidal functions
+    at exponentially spaced frequencies (like positional encoding), or
+    a Random Fourier Features (RFF) ablation with random frequencies + phases.
+
+    Supports ablations:
+    - permute_tokens: Randomly permute token IDs before embedding (tests reliance on tokenizer ID structure)
+    - random_embeddings: Use Random Fourier Features (random frequencies + phases) instead of deterministic inv_freq
+
+    Also supports index mapping ablation:
+    - index_mode:
+        * "raw"        : x = p
+        * "normalized" : x = 2*(p/(V-1)) - 1
+        * "scaled"     : x = scale * p
+    """
+
+    def __init__(
+        self,
+        max_seq_len: int,
+        d_model: int,
+        vocab_size: int,
+        permute_tokens: bool = False,
+        random_embeddings: bool = False,
+        seed: int = 42,
+        base: float = 10000.0,
+        index_mode: str = "raw",
+        index_scale: float = 1.0,
+        # Optional: control RFF frequency scale; if None, defaults to mean(inv_freq)
+        rff_sigma: Optional[float] = None,
+    ):
+        super().__init__()
+        if d_model % 2 != 0:
+            raise ValueError(f"d_model must be even (got {d_model})")
+
         self.max_seq_len = max_seq_len
         self.d_model = d_model
+        self.vocab_size = vocab_size
+        self.permute_tokens = permute_tokens
+        self.random_embeddings = random_embeddings
+        self.base = base
+
+        if index_mode not in ("raw", "normalized", "scaled"):
+            raise ValueError(f"index_mode must be one of ['raw','normalized','scaled'] (got {index_mode})")
+        self.index_mode = index_mode
+        self.index_scale = float(index_scale)
+
+        half = d_model // 2
+
+        # Deterministic exponentially-spaced frequencies (PE-style)
+        inv_freq = 1.0 / (base ** (torch.arange(0, d_model, 2).float() / d_model))
+        self.register_buffer("inv_freq", inv_freq)  # shape (half,)
+
+        if random_embeddings:
+            # Random Fourier Features: angles = x * w + b
+            # Choose sigma in the same rough scale as deterministic inv_freq unless overridden.
+            if rff_sigma is None:
+                # Use mean inv_freq as a reasonable default scale for w.
+                rff_sigma = float(inv_freq.mean().item())
+
+            g = torch.Generator().manual_seed(seed)
+            # Frequencies w ~ N(0, sigma^2)
+            random_freqs = torch.randn(half, generator=g) * rff_sigma
+            # Phases b ~ U(0, 2π)
+            random_phases = torch.rand(half, generator=g) * (2.0 * math.pi)
+
+            self.register_buffer("random_freqs", random_freqs)     # shape (half,)
+            self.register_buffer("random_phases", random_phases)   # shape (half,)
+
+        if permute_tokens:
+            g = torch.Generator().manual_seed(seed)
+            permutation = torch.randperm(vocab_size, generator=g)
+            self.register_buffer("permutation", permutation)
+
+    def _map_indices(self, input_ids: torch.Tensor) -> torch.Tensor:
+        """Map token IDs to scalar x according to index_mode."""
+        x = input_ids.float()
+
+        if self.index_mode == "raw":
+            # x = p
+            pass
+        elif self.index_mode == "scaled":
+            # x = scale * p
+            x = x * self.index_scale
+        elif self.index_mode == "normalized":
+            # x = 2*(p/(V-1)) - 1
+            denom = float(self.vocab_size - 1) if self.vocab_size > 1 else 1.0
+            x = 2.0 * (x / denom) - 1.0
+        else:
+            raise RuntimeError("unreachable")
+
+        return x.unsqueeze(-1)  # (batch, seq, 1)
 
     def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
-        # Removed explicit CUDA check to allow CPU execution
-        # if not input_ids.is_cuda:
-        #     raise ValueError("Input tensor must be on CUDA")
+        """
+        Args:
+            input_ids: Long tensor of shape (batch_size, seq_len)
 
-        # Call the polynomial kernels (will dispatch to CPU/CUDA based on build)
-        input_ids = input_ids.float() # Ensure float type
-        # Note: Currently hardcoded to fourier. Consider making this configurable.
-        embeddings = polynomial_embeddings.fourier(
-            input_ids, self.max_seq_len, self.d_model
-        )
-        return embeddings[0]
+        Returns:
+            embeddings: Float tensor of shape (batch_size, seq_len, d_model)
+        """
+        if input_ids.dtype not in (torch.int64, torch.int32, torch.int16, torch.int8, torch.uint8):
+            # Allow non-long ids but they must be integer-like.
+            # If you always pass torch.long, you can delete this.
+            input_ids = input_ids.long()
+
+        if self.permute_tokens:
+            input_ids = self.permutation[input_ids]
+
+        x = self._map_indices(input_ids)  # (batch, seq, 1)
+
+        if self.random_embeddings:
+            # Random Fourier Features: sin(w*x + b), cos(w*x + b)
+            w = self.random_freqs.to(x.device)        # (half,)
+            b = self.random_phases.to(x.device)       # (half,)
+            angles = x * w + b                        # broadcast -> (batch, seq, half)
+        else:
+            # Deterministic Fourier features with exponentially spaced frequencies
+            w = self.inv_freq.to(x.device)            # (half,)
+            angles = x * w                            # (batch, seq, half)
+
+        sin_emb = torch.sin(angles)
+        cos_emb = torch.cos(angles)
+        embeddings = torch.cat([sin_emb, cos_emb], dim=-1)  # (batch, seq, d_model)
+
+        return embeddings
 
 
 class RotaryPositionEncoding(nn.Module):
@@ -142,20 +249,13 @@ class Layer(nn.Module):
         return tensor.view(new_shape)
 
     def attn(self, q, k, v, attention_mask):
-        dot_product = torch.matmul(q, k.transpose(-1, -2))
-        scaled_dot_product = dot_product / math.sqrt(self.attention_head_size)
-
         if attention_mask is not None:
-            attention_mask = attention_mask == 1
-            attention_mask = attention_mask.unsqueeze(1).unsqueeze(2)
-            scaled_dot_product = torch.where(
-                attention_mask,
-                scaled_dot_product,
-                torch.tensor(float("-inf"), device=q.device),
-            )
+            attention_mask = (attention_mask == 1).unsqueeze(1).unsqueeze(2)
+            attention_mask = attention_mask.expand(-1, -1, q.size(2), -1)
 
-        attention_weights = nn.functional.softmax(scaled_dot_product, dim=-1)
-        return torch.matmul(attention_weights, v)
+        return nn.functional.scaled_dot_product_attention(
+            q, k, v, attn_mask=attention_mask, dropout_p=0.0
+        )
 
     def forward(self, x, attention_mask):
         residual = x
@@ -180,7 +280,7 @@ class Layer(nn.Module):
 
         residual = x
         x = self.positional_ff(x)
-        x = self.norm2(attended_outputs + residual)
+        x = self.norm2(x + residual)
 
         return x
 
@@ -197,9 +297,23 @@ class PETE(nn.Module):
         num_hidden_layers,
         num_attention_heads,
         max_seq_len,
+        permute_tokens: bool = False,
+        random_embeddings: bool = False,
+        index_mode: str = "raw",
+        index_scale: float = 1.0,
+        rff_sigma: Optional[float] = None,
     ):
         super(PETE, self).__init__()
-        self.expansion = PolynomialBlock(max_seq_len, d_model)
+        self.expansion = PolynomialBlock(
+            max_seq_len,
+            d_model,
+            vocab_size=vocab_size,
+            permute_tokens=permute_tokens,
+            random_embeddings=random_embeddings,
+            index_mode=index_mode,
+            index_scale=index_scale,
+            rff_sigma=rff_sigma,
+        )
         self.mlp = nn.Linear(d_model, d_model)
         self.norm = RMSNorm(d_model)
         self.d_model = d_model

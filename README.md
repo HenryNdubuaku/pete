@@ -9,109 +9,96 @@ This repository contains the official implementation for the paper **"Parameter-
 
 Traditional embedding layers in Transformer models often constitute the largest portion of parameters, scaling with vocabulary size without a proportional increase in performance. This project introduces PETE, a novel approach where token embeddings are generated deterministically using polynomial basis functions (Fourier, Chebyshev, Legendre, Laguerre, Hermite) applied to normalized token IDs, followed by a lightweight MLP.
 
-This method significantly reduces the parameter count compared to standard learned embeddings, leading to faster training times and competitive performance, especially on sentence similarity tasks. The core polynomial expansions are implemented using efficient custom C++/CUDA kernels.
+This method significantly reduces the parameter count compared to standard learned embeddings, leading to faster training times and competitive performance, especially on sentence similarity tasks.
 
 ## Key Features
 
-*   **Parameter Efficiency:** Replaces large learned embedding tables with deterministic polynomial expansions and a small MLP, drastically reducing parameters.
-*   **Multiple Polynomial Bases:** Supports Fourier (default), Chebyshev, Legendre, Laguerre, and Hermite expansions. (Note: Currently, the code seems hardcoded to Fourier in `src/pete.py`, but the kernels exist).
-*   **Custom Kernels:** High-performance C++/CUDA kernels for polynomial basis calculations.
+*   **Parameter Efficiency:** Replaces large learned embedding tables with deterministic Fourier embeddings and a small MLP, drastically reducing parameters.
+*   **Pure PyTorch:** No custom CUDA kernels required - runs on any PyTorch-supported device.
 *   **Competitive Performance:** Achieves strong results on benchmarks like STS-B, outperforming comparable small models.
-*   **Faster Training:** Reduced parameter count and efficient kernels lead to quicker training cycles.
+*   **Faster Training:** Reduced parameter count leads to quicker training cycles.
 
 ## Project Structure
 
 ```
 .
-├── polynomial_embeddings/ # C++/CUDA kernels for polynomial expansions
-│   ├── *.cpp
-│   ├── *.cu
-│   └── *.h
-├── src/                   # Python source code for model, training, data handling
-│   ├── pete.py            # Main PETE model definition
-│   ├── trainer.py         # Training and evaluation loops
-│   ├── embedder.py        # Embedding wrapper and utility functions
-│   ├── benchmark.py       # Evaluation functions
-│   ├── data.py            # Data loading and processing
-│   └── ...
-├── paper/                 # LaTeX source for the paper
-│   └── main.tex
-├── environment.yml        # Conda environment specification
-├── setup.py               # Setup for polynomial_embeddings package
-└── README.md              # This file
+├── src/
+│   ├── pete.py                  # Main PETE model (Fourier embeddings)
+│   ├── transformer.py           # Baseline transformer model
+│   ├── polynomial_embeddings.py # Triton kernels for polynomial bases
+│   ├── trainer.py               # Training loops
+│   ├── embedder.py              # Contrastive learning wrapper
+│   ├── benchmark.py             # GLUE evaluation functions
+│   ├── data.py                  # Data loading and processing
+│   └── utils.py                 # Utilities
+├── main.py                      # Entry point for training
+├── requirements.txt             # Python dependencies
+└── README.md
 ```
 
 ## Installation
 
-### Prerequisites
-
-*   A Linux environment (tested on Ubuntu).
-*   NVIDIA GPU with CUDA support.
-*   `nvcc` (NVIDIA CUDA Compiler): Verify with `nvcc --version`. Install via package manager (e.g., `sudo apt install nvidia-cuda-toolkit`) or Conda.
-*   `g++`: Verify with `which g++`. Install with `sudo apt install build-essential`.
-*   Conda or Miniconda.
-
-### Steps
-
-1.  **Clone the repository:**
-    ```bash
-    git clone https://github.com/HMUNACHI/pete.git 
-    cd pete
-    ```
-
-2.  **Create and activate the Conda environment:**
-    ```bash
-    conda env create -f environment.yml
-    conda activate pete_env
-    ```
-
-3.  **Install CUDA toolkit within the environment (adjust version if needed):**
-    ```bash
-    conda install -c nvidia/label/cuda-11.7.0 cuda-toolkit=11.7 cuda-nvcc=11.7
-    # Or for newer CUDA versions:
-    # conda install cuda -c nvidia
-    ```
-
-4.  **Compile and install the custom polynomial embedding kernels:**
-    ```bash
-    cd polynomial_embeddings
-    pip install .
-    cd ..
-    ```
+```bash
+git clone https://github.com/HMUNACHI/pete.git
+cd pete
+pip install -r requirements.txt
+```
 
 ## Usage
 
 ### Training
 
-To train a model using the default configuration (Fourier embeddings):
-
 ```bash
-python src/trainer.py --experiment_name=pete_fourier_default
+python main.py --batch-size 512 --num-epochs 10
 ```
 
-Check `src/trainer.py` (or potentially a separate script if arguments are added later) for command-line arguments to customize:
+### Options
 
-*   Model dimensions (`d_model`)
-*   Number of layers (`num_hidden_layers`)
-*   Number of attention heads (`num_attention_heads`)
-*   Epochs, learning rate, batch size, etc.
-*   Choice of polynomial embedding (Requires code modification in `src/pete.py` `PolynomialBlock` currently).
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--d-model` | 128 | Model dimension |
+| `--num-hidden-layers` | 1 | Number of transformer layers |
+| `--batch-size` | 256 | Batch size |
+| `--num-epochs` | 5 | Number of epochs |
+| `--learning-rate` | 1e-5 | Learning rate |
+| `--include-baseline` | False | Also train standard transformer |
+| `--permute-tokens` | False | Ablation: randomize token IDs before embedding |
+| `--random-embeddings` | False | Ablation: use Random Fourier Features |
+| `--index-mode` | raw | Index mapping: `raw`, `normalized`, or `scaled` |
+| `--index-scale` | 1.0 | Scale factor for `--index-mode=scaled` |
+| `--rff-sigma` | None | Frequency scale for Random Fourier Features |
 
 ### Evaluation
 
 The training script automatically runs evaluations on validation sets (like STS-B) during and after training. Results are logged to TensorBoard (`runs/`) and printed to the console. The best model weights are saved in the `weights/` directory.
 
-### Using Different Polynomial Embeddings
+### Reproducing key ablations
+```bash
+# Transformer baselines
+python main.py --batch-size 512 --num-epochs 10 --d-model 256 --include-baseline && \
+python main.py --batch-size 512 --num-epochs 10 --d-model 512 --include-baseline && \
+python main.py --batch-size 512 --num-epochs 10 --num-hidden-layers 2 --d-model 256 --include-baseline
 
-Currently, the `PolynomialBlock` in `src/pete.py` is hardcoded to use `polynomial_embeddings.fourier`. To use other bases (Chebyshev, Legendre, Laguerre, Hermite), you would need to modify this line:
-
-```python
-# In src/pete.py -> PolynomialBlock.forward
-# Change this line to use a different kernel:
-embeddings = polynomial_embeddings.fourier( # Change 'fourier' to 'chebyshev', 'legendre', etc.
-    input_ids, self.max_seq_len, self.d_model
-)
+# 2_256 ablations
+python main.py --batch-size 512 --num-epochs 10 --num-hidden-layers 2 --d-model 256
+python main.py --batch-size 512 --num-epochs 10 --num-hidden-layers 2 --d-model 256 --permute-tokens && \
+python main.py --batch-size 512 --num-epochs 10 --num-hidden-layers 2 --d-model 256 --random-embeddings && \
+python main.py --batch-size 512 --num-epochs 10 --num-hidden-layers 2 --d-model 256 --index-mode normalized && \
+python main.py --batch-size 512 --num-epochs 10 --num-hidden-layers 2 --d-model 256 --index-mode scaled --index-scale 0.001
 ```
+
+### Exploring embedding similarity
+
+After training, compare PETE's learned Fourier+MLP embeddings with traditional transformer embeddings:
+
+```bash
+# Compare embeddings for all configs
+python explore_similarity.py --config 1_256 && \
+python explore_similarity.py --config 1_512 && \
+python explore_similarity.py --config 2_256
+```
+
+This computes cosine similarity, angular distance, and MSE between PETE and transformer embedding layers to analyze whether PETE learns to approximate traditional embeddings.
 
 ## Citation
 
@@ -120,7 +107,7 @@ If you find this work useful in your research, please cite our paper:
 ```bibtex
 @article{ndubuaku2024pete,
   title={Parameter-Efficient Transformer Embedding},
-  author={Ndubuaku, Henry and Talhi, Mouad},
+  author={Ndubuaku et. al},
   journal={arXiv preprint arXiv:2505.02266},
   year={2025}
 }

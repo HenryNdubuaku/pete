@@ -171,7 +171,7 @@ def evaluate(
             with torch.autocast(device_type="cuda", dtype=torch.float16):
                 for batch in data_loader[dataset_name]["test"]:
                     batch = [x.to(device) for x in batch]
-                    preds = model.get_predictions(batch).cpu().numpy()
+                    preds = model.get_predictions(batch).float().cpu().numpy()
                     all_predictions.append(preds)
 
         all_predictions = np.concatenate(all_predictions, axis=0)
@@ -218,16 +218,15 @@ def evaluate(
     with torch.no_grad():
         with torch.autocast(device_type="cuda", dtype=torch.float16):
             for batch in data_loader[dataset_name]["validation"]:
-
                 batch = [x.to(device) for x in batch]
                 preds = model.get_predictions(batch)
                 labels = batch[-1].long()
 
-                all_preds.append(preds.cpu())
+                all_preds.append(preds.float().cpu())
                 all_labels.append(labels.cpu())
 
-    all_preds = torch.cat(all_preds).numpy()
-    all_labels = torch.cat(all_labels).numpy()
+    all_preds = torch.cat(all_preds).float().numpy()
+    all_labels = torch.cat(all_labels).float().numpy()
 
     if dataset_name == "stsb":
         return spearman_evaluate(all_preds, all_labels)

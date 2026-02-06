@@ -1,3 +1,4 @@
+import os
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
@@ -7,6 +8,13 @@ from torch.utils.data import DataLoader, TensorDataset
 from transformers import PreTrainedTokenizer
 
 torch.manual_seed(0)
+
+CACHE_DIR = ".cache/tokenized"
+
+
+def get_cache_path(name: str, split: str, max_length: int) -> str:
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    return os.path.join(CACHE_DIR, f"{name}_{split}_{max_length}.pt")
 
 
 def tokenize_texts(sentences, tokenizer, max_length):
@@ -40,8 +48,9 @@ def create_dataloader(
     sentence1_key="sentence1",
     sentence2_key=None,
     label_key=None,
+    return_tensors=False,
 ):
-    sentences1 = ds_split[sentence1_key]
+    sentences1 = list(ds_split[sentence1_key])
     encodings1 = tokenize_texts(sentences1, tokenizer, max_length)
 
     # Cast attention_mask to float32
@@ -53,7 +62,7 @@ def create_dataloader(
     ]
 
     if sentence2_key is not None:
-        sentences2 = ds_split[sentence2_key]
+        sentences2 = list(ds_split[sentence2_key])
         encodings2 = tokenize_texts(sentences2, tokenizer, max_length)
 
         # Cast attention_mask to float32
@@ -62,13 +71,17 @@ def create_dataloader(
         tensors.extend([encodings2["input_ids"], encodings2["attention_mask"]])
 
     if label_key is not None:
-        labels = ds_split[label_key]
+        labels = list(ds_split[label_key])
         tensors.append(torch.tensor(labels, dtype=torch.float32))
 
     dataset = TensorDataset(*tensors)
     dataloader = DataLoader(
-        dataset, batch_size=batch_size, shuffle=True, drop_last=True
+        dataset, batch_size=batch_size, shuffle=True, drop_last=True,
+        pin_memory=True, num_workers=0  # num_workers=0 is fine for TensorDataset
     )
+
+    if return_tensors:
+        return dataloader, tensors
     return dataloader
 
 
@@ -168,10 +181,24 @@ class GlueDatasetLoader:
     def create_all_dataloaders(self):
         """
         Create DataLoaders for all splits in all datasets.
+        Uses caching to speed up subsequent runs.
         """
         for name, ds in self.datasets.items():
             self.data_loaders[name] = {}
             for split in ds.keys():
+                cache_path = get_cache_path(name, split, self.max_length)
+
+                # Try to load from cache
+                if os.path.exists(cache_path):
+                    tensors = torch.load(cache_path)
+                    dataset = TensorDataset(*tensors)
+                    dataloader = DataLoader(
+                        dataset, batch_size=self.batch_size, shuffle=True, drop_last=True
+                    )
+                    self.data_loaders[name][split] = dataloader
+                    print(f"Loaded cached DataLoader for {name} [{split}] with {len(dataloader)} batches.")
+                    continue
+
                 ds_split = ds[split]
 
                 sentence1_key, sentence2_key = self.get_sentence_keys(name)
@@ -198,7 +225,7 @@ class GlueDatasetLoader:
                     )
                     continue  # Skip creating DataLoader for this split
 
-                dataloader = create_dataloader(
+                dataloader, tensors = create_dataloader(
                     tokenizer=self.tokenizer,
                     ds_split=ds_split,
                     batch_size=self.batch_size,
@@ -206,7 +233,12 @@ class GlueDatasetLoader:
                     sentence1_key=sentence1_key,
                     sentence2_key=sentence2_key,
                     label_key=label_key,
+                    return_tensors=True,
                 )
+
+                # Save to cache
+                torch.save(tensors, cache_path)
+
                 self.data_loaders[name][split] = dataloader
                 print(
                     f"Created DataLoader for {name} [{split}] with {len(dataloader)} batches."
